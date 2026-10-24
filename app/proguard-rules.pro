@@ -1,0 +1,3 @@
+-keep class com.example.alarmclock.scheduler.** { *; }
+-keep class com.example.alarmclock.guard.** { *; }
+-keep class * extends android.app.admin.DeviceAdminReceiver

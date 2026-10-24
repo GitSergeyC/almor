@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.AlarmClock" parent="android:Theme.Material.NoActionBar" />
+    <style name="Theme.AlarmClock.Ringing" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowShowWallpaper">false</item>
+    </style>
+</resources>

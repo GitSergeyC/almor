@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Будильник</string>
+    <string name="accessibility_service_label">Защита будильника</string>
+    <string name="accessibility_service_description">Во время срабатывания будильника не даёт свернуть или закрыть экран задания до его выполнения. Служба активна только в момент звонка и не собирает никаких данных.</string>
+    <string name="channel_ringing">Срабатывание будильника</string>
+    <string name="channel_upcoming">Ближайший будильник</string>
+</resources>
