@@ -1,6 +1,7 @@
 package com.example.alarmclock.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -15,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -58,6 +60,18 @@ fun AlarmEditScreen(
         onPauseOrDispose { }
     }
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    // Форма не строится, пока будильник не прочитан из базы.
+    // Иначе часы создавались бы со значением по умолчанию (07:00),
+    // уже не обновлялись при загрузке — и сохранение затирало бы
+    // настоящее время будильника.
+    if (!state.loaded) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
     val alarm = state.alarm
 
     val timeState = rememberTimePickerState(

@@ -15,12 +15,25 @@ import kotlinx.coroutines.launch
 import java.time.ZonedDateTime
 import javax.inject.Inject
 
+/**
+ * Секция списка. [group] == null — будильники, не входящие ни в одну группу;
+ * такая секция показывается без заголовка и без переключателя.
+ */
+data class AlarmSection(
+    val group: AlarmGroup?,
+    val alarms: List<AlarmWithGroup>
+) {
+    val key: String get() = group?.id?.toString() ?: "ungrouped"
+    val enabledCount: Int get() = alarms.count { it.effectivelyEnabled }
+}
+
 data class AlarmListUiState(
-    val alarms: List<AlarmWithGroup> = emptyList(),
-    val groups: List<AlarmGroup> = emptyList(),
+    val sections: List<AlarmSection> = emptyList(),
     val nextSummary: String? = null,
     val exactAlarmsAllowed: Boolean = true
-)
+) {
+    val isEmpty: Boolean get() = sections.all { it.alarms.isEmpty() }
+}
 
 @HiltViewModel
 class AlarmListViewModel @Inject constructor(
@@ -37,16 +50,32 @@ class AlarmListViewModel @Inject constructor(
             NextTriggerCalculator.next(awg.alarm, awg.effectivelyEnabled, now)
         }.minOrNull()
 
+        val grouped = groups.map { g ->
+            AlarmSection(g, alarms.filter { it.alarm.groupId == g.id })
+        }
+        val ungrouped = alarms.filter { it.alarm.groupId == null }
+
         AlarmListUiState(
-            alarms = alarms,
-            groups = groups,
+            // Секция без группы идёт последней, чтобы группы были на виду.
+            sections = grouped + listOfNotNull(
+                AlarmSection(null, ungrouped).takeIf { ungrouped.isNotEmpty() }
+            ),
             nextSummary = next?.let { NextTriggerCalculator.humanizeRemaining(now, it) },
             exactAlarmsAllowed = scheduler.canScheduleExact()
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AlarmListUiState())
 
-    fun toggleAlarm(id: Long, enabled: Boolean) = viewModelScope.launch {
-        repository.setEnabled(id, enabled)
+    /**
+     * Переключатель у будильника показывает РЕАЛЬНОЕ состояние с учётом группы.
+     * Если будильник заглушён выключенной группой, включение тумблера
+     * поднимает и группу — иначе нажатие не давало бы видимого результата.
+     */
+    fun toggleAlarm(item: AlarmWithGroup, enabled: Boolean) = viewModelScope.launch {
+        if (enabled && item.mutedByGroup) {
+            repository.setGroupEnabled(item.alarm.groupId!!, true)
+            return@launch
+        }
+        repository.setEnabled(item.alarm.id, enabled)
     }
 
     /** Включение/выключение всей группы одной кнопкой. */

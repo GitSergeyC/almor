@@ -1,9 +1,11 @@
 package com.example.alarmclock.ui
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,12 +17,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,9 +34,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -55,6 +61,8 @@ fun AlarmListScreen(
     viewModel: AlarmListViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // Какие секции свёрнуты. По умолчанию все развёрнуты.
+    val collapsed = remember { mutableStateMapOf<String, Boolean>() }
 
     Scaffold(
         topBar = {
@@ -85,14 +93,12 @@ fun AlarmListScreen(
     ) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (!state.exactAlarmsAllowed) {
                 item {
-                    Card(
-                        Modifier.fillMaxWidth().clickable(onClick = onOpenPermissions)
-                    ) {
+                    Card(Modifier.fillMaxWidth().clickable(onClick = onOpenPermissions)) {
                         Row(
                             Modifier.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -105,49 +111,114 @@ fun AlarmListScreen(
                 }
             }
 
-            // Переключатели групп одной кнопкой
-            if (state.groups.isNotEmpty()) {
-                item {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        state.groups.forEach { group ->
-                            FilterChip(
-                                selected = group.enabled,
-                                onClick = { viewModel.toggleGroup(group.id, !group.enabled) },
-                                label = { Text(group.name) },
-                                leadingIcon = {
-                                    Spacer(
-                                        Modifier.size(12.dp).clip(CircleShape)
-                                            .background(Color(group.colorArgb))
-                                    )
-                                }
+            state.sections.forEach { section ->
+                val isCollapsed = collapsed[section.key] == true
+
+                section.group?.let { group ->
+                    item(key = "header-${section.key}") {
+                        GroupHeader(
+                            name = group.name,
+                            colorArgb = group.colorArgb,
+                            enabled = group.enabled,
+                            total = section.alarms.size,
+                            active = section.enabledCount,
+                            collapsed = isCollapsed,
+                            onToggleCollapse = { collapsed[section.key] = !isCollapsed },
+                            onToggleEnabled = { viewModel.toggleGroup(group.id, it) }
+                        )
+                    }
+                }
+
+                if (!isCollapsed) {
+                    items(section.alarms, key = { "alarm-${it.alarm.id}" }) { item ->
+                        AlarmRow(
+                            item = item,
+                            indented = section.group != null,
+                            onToggle = { viewModel.toggleAlarm(item, it) },
+                            onClick = { onEditAlarm(item.alarm.id) }
+                        )
+                    }
+                    if (section.group != null && section.alarms.isEmpty()) {
+                        item(key = "empty-${section.key}") {
+                            Text(
+                                "В группе пока нет будильников",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                             )
                         }
                     }
                 }
             }
 
-            items(state.alarms, key = { it.alarm.id }) { item ->
-                AlarmRow(
-                    item = item,
-                    onToggle = { viewModel.toggleAlarm(item.alarm.id, it) },
-                    onClick = { onEditAlarm(item.alarm.id) }
-                )
+            if (state.isEmpty) {
+                item {
+                    Text(
+                        "Будильников пока нет. Нажмите «плюс», чтобы создать первый.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 32.dp)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
+private fun GroupHeader(
+    name: String,
+    colorArgb: Int,
+    enabled: Boolean,
+    total: Int,
+    active: Int,
+    collapsed: Boolean,
+    onToggleCollapse: () -> Unit,
+    onToggleEnabled: (Boolean) -> Unit
+) {
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (collapsed) -90f else 0f,
+        label = "arrow"
+    )
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggleCollapse)
+            .padding(top = 8.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.ExpandMore,
+            contentDescription = if (collapsed) "Развернуть" else "Свернуть",
+            modifier = Modifier.rotate(arrowRotation)
+        )
+        Spacer(Modifier.size(8.dp))
+        Spacer(Modifier.size(12.dp).clip(CircleShape).background(Color(colorArgb)))
+        Spacer(Modifier.size(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (enabled) "$active из $total активны" else "группа выключена",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        Switch(checked = enabled, onCheckedChange = onToggleEnabled)
+    }
+}
+
+@Composable
 private fun AlarmRow(
     item: AlarmWithGroup,
+    indented: Boolean,
     onToggle: (Boolean) -> Unit,
     onClick: () -> Unit
 ) {
     val alarm = item.alarm
-    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    Card(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = if (indented) 16.dp else 0.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors()
+    ) {
         Row(
             Modifier.padding(16.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -162,12 +233,9 @@ private fun AlarmRow(
                     buildString {
                         append(formatDays(alarm))
                         if (alarm.label.isNotBlank()) append(" · ${alarm.label}")
-                        item.group?.let { append(" · ${it.name}") }
                     },
                     style = MaterialTheme.typography.bodySmall
                 )
-                // Честно показываем, что будильник заглушён группой,
-                // а не выключен лично — иначе пользователь путается.
                 if (item.mutedByGroup) {
                     Text(
                         "Отключён группой «${item.group?.name}»",
@@ -176,7 +244,9 @@ private fun AlarmRow(
                     )
                 }
             }
-            Switch(checked = alarm.enabled, onCheckedChange = onToggle)
+            // Тумблер отражает реальное состояние: выключенная группа
+            // гасит его, даже если личный флаг будильника включён.
+            Switch(checked = item.effectivelyEnabled, onCheckedChange = onToggle)
         }
     }
 }

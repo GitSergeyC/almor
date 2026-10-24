@@ -21,6 +21,8 @@ import java.time.DayOfWeek
 import javax.inject.Inject
 
 data class AlarmEditUiState(
+    /** Пока false — будильник ещё читается из базы, показывать форму нельзя. */
+    val loaded: Boolean = false,
     val alarm: Alarm = Alarm(hour = 7, minute = 0),
     val groups: List<AlarmGroup> = emptyList(),
     val availableTasks: List<TaskType> = listOf(TaskType.NONE),
@@ -44,6 +46,7 @@ class AlarmEditViewModel @Inject constructor(
         else repository.getAlarm(id)?.alarm ?: Alarm(hour = 7, minute = 0)
 
         _state.value = AlarmEditUiState(
+            loaded = true,
             alarm = alarm,
             groups = groups,
             availableTasks = registry.availableTypes(context),
