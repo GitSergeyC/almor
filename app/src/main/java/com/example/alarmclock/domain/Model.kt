@@ -41,10 +41,10 @@ data class Alarm(
     val groupId: Long? = null,
     val label: String = "",
     val soundUri: String? = null,
-    val volume: Int = 80,
+    val volume: Int = 100,
     val volumeRampSec: Int = 30,
     val vibrate: Boolean = true,
-    val snoozeMinutes: Int = 9,
+    val snoozeMinutes: Int = 10,
     val snoozeLimit: Int = 3,
     val taskType: TaskType = TaskType.NONE,
     val taskConfig: String = "{}",
@@ -62,6 +62,9 @@ data class Alarm(
         copy(daysMask = daysMask xor bit(day))
 
     companion object {
+        /** Варианты откладывания, как в системных приложениях-часах. 0 = выключено. */
+        val SNOOZE_PRESETS = listOf(0, 5, 10, 15, 20, 30)
+
         fun bit(day: DayOfWeek) = 1 shl (day.value - 1)
         val WEEKDAYS = 0b0011111
         val WEEKEND = 0b1100000

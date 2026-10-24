@@ -3,6 +3,7 @@ package com.example.alarmclock.ringing
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextAlign
 import com.example.alarmclock.domain.TaskType
 import com.example.alarmclock.tasks.TaskCallbacks
 import com.example.alarmclock.tasks.TaskRegistry
@@ -83,9 +85,7 @@ fun RingingScreen(
 
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 if (s.alarm.taskType == TaskType.NONE || task == null) {
-                    Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth(0.8f)) {
-                        Text("Выключить")
-                    }
+                    // Без задания середина экрана пустая: обе кнопки внизу.
                 } else {
                     val difficulty = baseDifficulty(s.escalated, failures)
                     task.Render(
@@ -107,10 +107,37 @@ fun RingingScreen(
                 }
             }
 
+            // Две крупные кнопки внизу, как в системных часах.
+            // «Выключить» недоступна, пока не выполнено задание, —
+            // иначе задание не имело бы смысла.
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (s.alarm.snoozeLimit != 0) {
-                    OutlinedButton(onClick = onSnooze, modifier = Modifier.fillMaxWidth()) {
-                        Text("Отложить на ${s.alarm.snoozeMinutes} мин")
+                val hasTask = s.alarm.taskType != TaskType.NONE && task != null
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (s.alarm.snoozeMinutes > 0) {
+                        OutlinedButton(
+                            onClick = onSnooze,
+                            modifier = Modifier.weight(1f).height(64.dp)
+                        ) {
+                            Text(
+                                "Отложить\n${s.alarm.snoozeMinutes} мин",
+                                textAlign = TextAlign.Center,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = onDismiss,
+                        enabled = !hasTask,
+                        modifier = Modifier.weight(1f).height(64.dp)
+                    ) {
+                        Text(
+                            if (hasTask) "Выполните\nзадание" else "Выключить",
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.titleMedium
+                        )
                     }
                 }
                 if (emergencyAvailable) {

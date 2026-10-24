@@ -64,6 +64,8 @@ class AlarmEditViewModel @Inject constructor(
     }
 
     fun toggleDay(day: DayOfWeek) = edit { it.withDayToggled(day) }
+    /** Быстрый пресет повтора: ежедневно, будни, выходные, один раз. */
+    fun setDays(mask: Int) = edit { it.copy(daysMask = mask) }
     fun setLabel(v: String) = edit { it.copy(label = v) }
     fun setGroup(id: Long?) = edit { it.copy(groupId = id) }
     fun setTaskType(t: TaskType) = edit { it.copy(taskType = t) }
@@ -72,7 +74,10 @@ class AlarmEditViewModel @Inject constructor(
     fun setVibrate(v: Boolean) = edit { it.copy(vibrate = v) }
     fun setVolume(v: Int) = edit { it.copy(volume = v.coerceIn(10, 100)) }
     fun setRamp(v: Int) = edit { it.copy(volumeRampSec = v.coerceIn(0, 120)) }
-    fun setSnooze(v: Int) = edit { it.copy(snoozeMinutes = v.coerceIn(1, 30)) }
+    fun setSnooze(v: Int) = edit { it.copy(snoozeMinutes = v.coerceIn(0, 60)) }
+
+    fun accessibilityIntent() = guard.accessibilitySettingsIntent()
+    fun deviceAdminIntent() = guard.deviceAdminIntent()
 
     fun save(hour: Int, minute: Int, onDone: () -> Unit) = viewModelScope.launch {
         repository.save(_state.value.alarm.copy(hour = hour, minute = minute))

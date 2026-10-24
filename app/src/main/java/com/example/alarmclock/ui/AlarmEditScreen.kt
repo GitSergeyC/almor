@@ -11,11 +11,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -34,13 +37,19 @@ import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.alarmclock.domain.GuardLevel
+import com.example.alarmclock.domain.Alarm
+import com.example.alarmclock.guard.GuardAvailability
 import com.example.alarmclock.domain.TaskType
 import java.time.DayOfWeek
 import java.time.format.TextStyle
@@ -74,6 +83,10 @@ fun AlarmEditScreen(
 
     val alarm = state.alarm
 
+    val context = LocalContext.current
+    // Уровень защиты, который пользователь выбрал без нужных разрешений.
+    var pendingGuard by remember { mutableStateOf<GuardLevel?>(null) }
+
     val timeState = rememberTimePickerState(
         initialHour = alarm.hour,
         initialMinute = alarm.minute,
@@ -105,6 +118,18 @@ fun AlarmEditScreen(
             TimePicker(state = timeState, modifier = Modifier.align(Alignment.CenterHorizontally))
 
             Text("Повтор", style = MaterialTheme.typography.titleSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PresetChip("Один раз", alarm.daysMask == 0) { viewModel.setDays(0) }
+                PresetChip("Ежедневно", alarm.daysMask == Alarm.EVERY_DAY) {
+                    viewModel.setDays(Alarm.EVERY_DAY)
+                }
+                PresetChip("Пн–Пт", alarm.daysMask == Alarm.WEEKDAYS) {
+                    viewModel.setDays(Alarm.WEEKDAYS)
+                }
+                PresetChip("Выходные", alarm.daysMask == Alarm.WEEKEND) {
+                    viewModel.setDays(Alarm.WEEKEND)
+                }
+            }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DayOfWeek.entries.forEach { day ->
                     FilterChip(
@@ -167,15 +192,23 @@ fun AlarmEditScreen(
                     val supported = state.guardAvailability.supports(level)
                     FilterChip(
                         selected = alarm.guardLevel == level,
-                        enabled = supported,
-                        onClick = { viewModel.setGuardLevel(level) },
-                        label = { Text(guardTitle(level)) }
+                        // Уровень можно выбрать всегда: если разрешений нет,
+                        // предлагаем их выдать, а не прячем возможность.
+                        onClick = {
+                            if (supported) viewModel.setGuardLevel(level)
+                            else pendingGuard = level
+                        },
+                        label = { Text(guardTitle(level)) },
+                        trailingIcon = if (!supported) {
+                            { Icon(Icons.Default.Lock, null, Modifier.size(16.dp)) }
+                        } else null
                     )
                 }
             }
             if (!state.guardAvailability.supports(alarm.guardLevel)) {
                 Text(
-                    "Для этого уровня нужны дополнительные разрешения — откройте раздел разрешений.",
+                    "Выбранный уровень пока не действует — не выданы разрешения. " +
+                        "Нажмите на него, чтобы это исправить.",
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -204,12 +237,15 @@ fun AlarmEditScreen(
                 valueRange = 0f..120f
             )
 
-            Text("Отложить на: ${alarm.snoozeMinutes} мин")
-            Slider(
-                value = alarm.snoozeMinutes.toFloat(),
-                onValueChange = { viewModel.setSnooze(it.toInt()) },
-                valueRange = 1f..30f
-            )
+            Text("Отложить на", style = MaterialTheme.typography.titleSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Alarm.SNOOZE_PRESETS.forEach { minutes ->
+                    PresetChip(
+                        text = if (minutes == 0) "Выкл" else "$minutes мин",
+                        selected = alarm.snoozeMinutes == minutes
+                    ) { viewModel.setSnooze(minutes) }
+                }
+            }
 
             if (alarmId != 0L) {
                 Spacer(Modifier.height(8.dp))
@@ -221,6 +257,87 @@ fun AlarmEditScreen(
             Spacer(Modifier.height(32.dp))
         }
     }
+
+    pendingGuard?.let { level ->
+        GuardPermissionDialog(
+            level = level,
+            availability = state.guardAvailability,
+            onOpenAccessibility = { context.startActivity(viewModel.accessibilityIntent()) },
+            onOpenDeviceAdmin = { context.startActivity(viewModel.deviceAdminIntent()) },
+            onApplyAnyway = {
+                viewModel.setGuardLevel(level)
+                pendingGuard = null
+            },
+            onDismiss = { pendingGuard = null }
+        )
+    }
+}
+
+/**
+ * Объясняет, чего не хватает выбранному уровню, и ведёт прямо в нужные
+ * настройки. Уровень можно применить и заранее — он начнёт действовать,
+ * как только разрешение будет выдано.
+ */
+@Composable
+private fun GuardPermissionDialog(
+    level: GuardLevel,
+    availability: GuardAvailability,
+    onOpenAccessibility: () -> Unit,
+    onOpenDeviceAdmin: () -> Unit,
+    onApplyAnyway: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val needsAccessibility = !availability.accessibilityEnabled
+    val needsAdmin = level == GuardLevel.MAXIMUM && !availability.deviceAdminEnabled
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Уровень «${guardTitle(level)}»") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    when (level) {
+                        GuardLevel.MAXIMUM ->
+                            "Перехватывает кнопку «Домой», меню питания и не даёт удалить " +
+                                "приложение во время звонка."
+                        else ->
+                            "Перехватывает кнопку «Домой» и список недавних приложений " +
+                                "во время звонка."
+                    }
+                )
+                Text("Для этого нужно выдать:", style = MaterialTheme.typography.titleSmall)
+                if (needsAccessibility) {
+                    TextButton(onClick = onOpenAccessibility, modifier = Modifier.fillMaxWidth()) {
+                        Text("Служба доступности")
+                    }
+                }
+                if (needsAdmin) {
+                    TextButton(onClick = onOpenDeviceAdmin, modifier = Modifier.fillMaxWidth()) {
+                        Text("Админ устройства")
+                    }
+                }
+                if (needsAccessibility) {
+                    Text(
+                        "Если в списке служб приложение недоступно, откройте его страницу " +
+                            "в настройках и включите «Разрешить ограниченные настройки».",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onApplyAnyway) { Text("Выбрать всё равно") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        }
+    )
+}
+
+/** Чип-пресет: выбор одного значения из нескольких. */
+@Composable
+private fun PresetChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(selected = selected, onClick = onClick, label = { Text(text) })
 }
 
 private fun guardTitle(level: GuardLevel) = when (level) {
